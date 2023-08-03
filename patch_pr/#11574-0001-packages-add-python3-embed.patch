@@ -1,0 +1,145 @@
+From 9f018be979abeb1bb8b9ba33cbdaaa99c58a0ed6 Mon Sep 17 00:00:00 2001
+From: zhongfly <11155705+zhongfly@users.noreply.github.com>
+Date: Sat, 29 Jul 2023 22:00:57 +0800
+Subject: [PATCH] packages: add python3-embed
+
+---
+ packages/CMakeLists.txt      |  1 +
+ packages/mpv.cmake           |  3 ++
+ packages/python3-embed.cmake | 72 ++++++++++++++++++++++++++++++++++++
+ packages/python3-embed.pc.in | 11 ++++++
+ 4 files changed, 87 insertions(+)
+ create mode 100644 packages/python3-embed.cmake
+ create mode 100644 packages/python3-embed.pc.in
+
+diff --git a/packages/CMakeLists.txt b/packages/CMakeLists.txt
+index 7f62d35..84c2647 100644
+--- a/packages/CMakeLists.txt
++++ b/packages/CMakeLists.txt
+@@ -65,6 +65,7 @@ list(APPEND ep
+     davs2
+     angle-headers
+     mujs
++    python3-embed
+     spirv-headers
+     spirv-tools
+     spirv-cross
+diff --git a/packages/mpv.cmake b/packages/mpv.cmake
+index d32b427..b9a9de0 100644
+--- a/packages/mpv.cmake
++++ b/packages/mpv.cmake
+@@ -16,6 +16,7 @@ ExternalProject_Add(mpv
+         uchardet
+         openal-soft
+         mujs
++        python3-embed
+         vulkan
+         shaderc
+         libplacebo
+@@ -40,6 +41,8 @@ ExternalProject_Add(mpv
+         -Dpdf-build=enabled
+         -Dlua=enabled
+         -Djavascript=enabled
++        -Dpython=enabled
++        -Dpydebug=true
+         -Dsdl2=enabled
+         -Dlibarchive=enabled
+         -Dlibbluray=enabled
+diff --git a/packages/python3-embed.cmake b/packages/python3-embed.cmake
+new file mode 100644
+index 0000000..9811188
+--- /dev/null
++++ b/packages/python3-embed.cmake
+@@ -0,0 +1,72 @@
++set(minver "11")
++set(relver "4")
++set(verson 3.${minver}.${relver})
++if(${TARGET_CPU} MATCHES "x86_64")
++    set(link "https://www.python.org/ftp/python/${verson}/python-${verson}-embed-amd64.zip")
++    set(hash "d0e85bf50d2adea597c40ee28e774081")
++else()
++    set(link "https://www.python.org/ftp/python/${verson}/python-${verson}-embed-win32.zip")
++    set(hash "81b0acfcdd31a73d1577d6e977acbdc6")
++    set(dlltool_opts "-U")
++endif()
++set(header_hash "bf6ec50f2f3bfa6ffbdb385286f2c628")
++
++configure_file(${CMAKE_CURRENT_SOURCE_DIR}/python3-embed.pc.in ${CMAKE_CURRENT_BINARY_DIR}/python3-embed.pc @ONLY)
++set(GENERATE_DEF ${CMAKE_CURRENT_BINARY_DIR}/python3-embed-prefix/src/generate_def.sh)
++file(WRITE ${GENERATE_DEF}
++"#!/bin/bash
++gendef $1.dll")
++
++
++ExternalProject_Add(python3-header
++    URL https://www.python.org/ftp/python/${verson}/Python-${verson}.tgz
++    URL_HASH MD5=${header_hash}
++    DOWNLOAD_DIR ${SOURCE_LOCATION}
++    UPDATE_COMMAND ""
++    PATCH_COMMAND ""
++    CONFIGURE_COMMAND ""
++    BUILD_COMMAND ""
++    INSTALL_COMMAND ${CMAKE_COMMAND} -E copy_directory <SOURCE_DIR>/Include ${MINGW_INSTALL_PREFIX}/include/python3
++            COMMAND ${CMAKE_COMMAND} -E copy <SOURCE_DIR>/PC/pyconfig.h ${MINGW_INSTALL_PREFIX}/include/python3/pyconfig.h
++    LOG_DOWNLOAD 1
++)
++
++ExternalProject_Add(python3-embed
++    DEPENDS
++        python3-header
++    URL ${link}
++    URL_HASH MD5=${hash}
++    DOWNLOAD_DIR ${SOURCE_LOCATION}
++    UPDATE_COMMAND ""
++    PATCH_COMMAND ""
++    CONFIGURE_COMMAND ""
++    BUILD_COMMAND ""
++    INSTALL_COMMAND ""
++    LOG_DOWNLOAD 1
++)
++
++ExternalProject_Add_Step(python3-embed generate-def
++    DEPENDEES install
++    WORKING_DIRECTORY <SOURCE_DIR>
++    COMMAND chmod 755 ${GENERATE_DEF}
++    COMMAND ${EXEC} ${GENERATE_DEF} python3${minver}
++    LOG 1
++)
++
++ExternalProject_Add_Step(python3-embed generate-lib
++    DEPENDEES generate-def
++    WORKING_DIRECTORY <SOURCE_DIR>
++    COMMAND ${EXEC} ${TARGET_ARCH}-dlltool -m ${dlltool_image} -d python3${minver}.def -l python3${minver}.lib
++    LOG 1
++)
++
++ExternalProject_Add_Step(python3-embed manual-install
++    DEPENDEES generate-lib
++    WORKING_DIRECTORY <SOURCE_DIR>
++    # Copying libs
++    COMMAND ${CMAKE_COMMAND} -E copy <SOURCE_DIR>/python3${minver}.lib ${MINGW_INSTALL_PREFIX}/lib/python3${minver}.lib
++    # Copying .pc files
++    COMMAND ${CMAKE_COMMAND} -E copy ${CMAKE_CURRENT_BINARY_DIR}/python3-embed.pc ${MINGW_INSTALL_PREFIX}/lib/pkgconfig/python3-embed.pc
++)
++
++cleanup(python3-embed manual-install)
+diff --git a/packages/python3-embed.pc.in b/packages/python3-embed.pc.in
+new file mode 100644
+index 0000000..79cfc9e
+--- /dev/null
++++ b/packages/python3-embed.pc.in
+@@ -0,0 +1,11 @@
++prefix=@MINGW_INSTALL_PREFIX@
++exec_prefix=${prefix}
++libdir=${exec_prefix}/lib
++includedir=${prefix}/include
++
++Name: Python
++Description: Embed Python into an application
++Version: @verson@
++Libs.private:
++Libs: -L${libdir} -lpython3.@minver@  -Wl,-delayload=python3@minver@.dll
++Cflags: -I${includedir}/python3
+-- 
+2.41.0
+
